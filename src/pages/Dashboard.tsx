@@ -1,33 +1,89 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Receipt, TrendingUp, Wallet } from "lucide-react";
+import { Plus, Receipt, TrendingUp, Wallet, Loader2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useNavigate } from "react-router-dom";
-
-// Mock data for the chart
-const spendingData = [
-  { date: "1", amount: 2400 },
-  { date: "5", amount: 1398 },
-  { date: "10", amount: 9800 },
-  { date: "15", amount: 3908 },
-  { date: "20", amount: 4800 },
-  { date: "25", amount: 3800 },
-  { date: "30", amount: 4300 },
-];
-
-// Mock recent expenses
-const recentExpenses = [
-  { id: 1, merchant: "Savour Foods", amount: 1500, category: "Food", date: "2024-01-15" },
-  { id: 2, merchant: "PSO Petrol Pump", amount: 3500, category: "Petrol", date: "2024-01-14" },
-  { id: 3, merchant: "Al-Fatah", amount: 2800, category: "Groceries", date: "2024-01-13" },
-];
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { format } from "date-fns";
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [totalSpend] = useState(28500);
-  const [totalReceipts] = useState(24);
-  const [topCategory] = useState("Food");
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [totalSpend, setTotalSpend] = useState(0);
+  const [totalReceipts, setTotalReceipts] = useState(0);
+  const [topCategory, setTopCategory] = useState("N/A");
+  const [recentExpenses, setRecentExpenses] = useState<any[]>([]);
+  const [spendingData, setSpendingData] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
+    }
+  }, [user]);
+
+  const fetchDashboardData = async () => {
+    try {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      // Fetch expenses for current month
+      const { data: expenses, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', user!.id)
+        .gte('date', startOfMonth.toISOString().split('T')[0])
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+
+      // Calculate total spend
+      const total = expenses?.reduce((sum, exp) => sum + Number(exp.amount), 0) || 0;
+      setTotalSpend(total);
+      setTotalReceipts(expenses?.length || 0);
+
+      // Find top category
+      const categoryTotals: { [key: string]: number } = {};
+      expenses?.forEach(exp => {
+        categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + Number(exp.amount);
+      });
+      const topCat = Object.keys(categoryTotals).reduce((a, b) => 
+        categoryTotals[a] > categoryTotals[b] ? a : b, "N/A"
+      );
+      setTopCategory(topCat);
+
+      // Set recent expenses
+      setRecentExpenses(expenses?.slice(0, 3) || []);
+
+      // Generate spending data for chart
+      const chartData: { [key: string]: number } = {};
+      expenses?.forEach(exp => {
+        const day = new Date(exp.date).getDate().toString();
+        chartData[day] = (chartData[day] || 0) + Number(exp.amount);
+      });
+      
+      const formatted = Object.keys(chartData)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(day => ({ date: day, amount: chartData[day] }));
+      
+      setSpendingData(formatted.length > 0 ? formatted : [{ date: "1", amount: 0 }]);
+    } catch (error: any) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -126,29 +182,39 @@ const Dashboard = () => {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentExpenses.map((expense) => (
-                <div
-                  key={expense.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-fast cursor-pointer"
-                  onClick={() => navigate(`/expense/${expense.id}`)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Receipt className="h-5 w-5 text-primary" />
+            {recentExpenses.length > 0 ? (
+              <div className="space-y-4">
+                {recentExpenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-fast cursor-pointer"
+                    onClick={() => navigate(`/expense/${expense.id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Receipt className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{expense.merchant}</p>
+                        <p className="text-sm text-muted-foreground">{expense.category}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{expense.merchant}</p>
-                      <p className="text-sm text-muted-foreground">{expense.category}</p>
+                    <div className="text-right">
+                      <p className="font-semibold">PKR {Number(expense.amount).toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(new Date(expense.date), 'MMM d, yyyy')}
+                      </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold">PKR {expense.amount.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">{expense.date}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Receipt className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No expenses yet</p>
+                <p className="text-sm">Scan your first receipt to get started!</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

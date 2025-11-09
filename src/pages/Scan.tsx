@@ -4,43 +4,60 @@ import { Card } from "@/components/ui/card";
 import { Upload, Camera, ArrowLeft, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 const Scan = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [isScanning, setIsScanning] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     // Create preview
     const reader = new FileReader();
     reader.onload = (e) => {
-      setPreviewImage(e.target?.result as string);
-      simulateScanning();
+      const base64 = e.target?.result as string;
+      setPreviewImage(base64);
+      processReceipt(base64);
     };
     reader.readAsDataURL(file);
   };
 
-  const simulateScanning = () => {
+  const processReceipt = async (imageBase64: string) => {
     setIsScanning(true);
-    
-    // Simulate AI processing
-    setTimeout(() => {
-      setIsScanning(false);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const { data, error } = await supabase.functions.invoke('scan-receipt', {
+        body: { imageBase64 },
+      });
+
+      if (error) throw error;
+
       toast.success("Receipt scanned successfully!");
-      
-      // Navigate to expense detail with mock data
+
+      // Navigate to expense detail with extracted data
       navigate("/expense/new", {
         state: {
-          merchant: "Savour Foods",
-          amount: 1500,
-          date: new Date().toISOString().split('T')[0],
-        }
+          merchant: data.merchant,
+          amount: data.amount,
+          date: data.date,
+          category: data.category,
+        },
       });
-    }, 2500);
+    } catch (error: any) {
+      console.error('Error scanning receipt:', error);
+      toast.error(error.message || "Failed to scan receipt");
+      setIsScanning(false);
+      setPreviewImage(null);
+    }
   };
 
   return (
@@ -73,7 +90,7 @@ const Scan = () => {
               <div className="absolute inset-0 bg-primary/20 backdrop-blur-sm flex flex-col items-center justify-center">
                 <Loader2 className="h-16 w-16 text-primary-foreground animate-spin mb-4" />
                 <p className="text-primary-foreground font-semibold text-lg">Scanning receipt...</p>
-                <p className="text-primary-foreground/80 text-sm mt-2">Extracting details</p>
+                <p className="text-primary-foreground/80 text-sm mt-2">Extracting details with AI</p>
               </div>
             </Card>
           </div>

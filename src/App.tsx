@@ -9,8 +9,12 @@ import ExpenseDetail from "./pages/ExpenseDetail";
 import Expenses from "./pages/Expenses";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import Auth from "./pages/Auth";
+import Premium from "./pages/Premium";
+import AdminPanel from "./pages/AdminPanel";
 import BottomNav from "./components/BottomNav";
 import NotFound from "./pages/NotFound";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -21,12 +25,15 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<><Dashboard /><BottomNav /></>} />
-          <Route path="/scan" element={<Scan />} />
-          <Route path="/expense/:id" element={<><ExpenseDetail /><BottomNav /></>} />
-          <Route path="/expenses" element={<><Expenses /><BottomNav /></>} />
-          <Route path="/reports" element={<><Reports /><BottomNav /></>} />
-          <Route path="/settings" element={<><Settings /><BottomNav /></>} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/" element={<ProtectedRoute><Dashboard /><BottomNav /></ProtectedRoute>} />
+          <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
+          <Route path="/expense/:id" element={<ProtectedRoute><ExpenseDetail /><BottomNav /></ProtectedRoute>} />
+          <Route path="/expenses" element={<ProtectedRoute><Expenses /><BottomNav /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><Reports /><BottomNav /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /><BottomNav /></ProtectedRoute>} />
+          <Route path="/premium" element={<ProtectedRoute><Premium /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
