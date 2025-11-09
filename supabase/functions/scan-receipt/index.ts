@@ -38,39 +38,43 @@ serve(async (req) => {
       });
     }
 
-    // Call Lovable AI with vision capability
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    // Call Gemini API with vision capability
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
     
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    if (!GEMINI_API_KEY) {
+      return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not configured' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Remove data:image prefix if present to get just the base64 content
+    const base64Data = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
+        contents: [
           {
-            role: 'system',
-            content: 'You are a receipt OCR expert. Extract merchant name, total amount, and date from receipts. Return JSON only: {merchant: string, amount: number, date: string (YYYY-MM-DD), category: string}. Choose category from: Food, Transport, Shopping, Bills, Entertainment, Healthcare, Other.'
-          },
-          {
-            role: 'user',
-            content: [
+            parts: [
               {
-                type: 'text',
-                text: 'Extract the receipt information and return it as JSON.'
+                text: 'You are a receipt OCR expert. Extract merchant name, total amount, and date from receipts. Return ONLY valid JSON in this exact format: {merchant: string, amount: number, date: string (YYYY-MM-DD), category: string}. Choose category from: Food, Transport, Shopping, Bills, Entertainment, Healthcare, Other. Extract the receipt information and return it as JSON.'
               },
               {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64
+                inline_data: {
+                  mime_type: 'image/jpeg',
+                  data: base64Data
                 }
               }
             ]
           }
         ],
-        temperature: 0.1,
+        generationConfig: {
+          temperature: 0.1,
+        }
       }),
     });
 
@@ -84,7 +88,11 @@ serve(async (req) => {
     }
 
     const aiResponse = await response.json();
-    const content = aiResponse.choices[0].message.content;
+    const content = aiResponse.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!content) {
+      throw new Error('No content in AI response');
+    }
     
     // Parse the JSON from AI response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
