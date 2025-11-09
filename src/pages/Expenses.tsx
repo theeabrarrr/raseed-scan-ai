@@ -1,26 +1,44 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Receipt, Search, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, Receipt, Search, SlidersHorizontal, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
-const mockExpenses = [
-  { id: 1, merchant: "Savour Foods", amount: 1500, category: "Food", date: "2024-01-15" },
-  { id: 2, merchant: "PSO Petrol Pump", amount: 3500, category: "Petrol", date: "2024-01-14" },
-  { id: 3, merchant: "Al-Fatah", amount: 2800, category: "Groceries", date: "2024-01-13" },
-  { id: 4, merchant: "Metro Cash & Carry", amount: 5200, category: "Groceries", date: "2024-01-12" },
-  { id: 5, merchant: "KFC", amount: 2100, category: "Food", date: "2024-01-11" },
-  { id: 6, merchant: "Utility Bills", amount: 4500, category: "Utilities", date: "2024-01-10" },
-  { id: 7, merchant: "Shell Petrol", amount: 3800, category: "Petrol", date: "2024-01-09" },
-  { id: 8, merchant: "McDonald's", amount: 1800, category: "Food", date: "2024-01-08" },
-];
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { format } from "date-fns";
 
 const Expenses = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredExpenses = mockExpenses.filter(expense =>
+  useEffect(() => {
+    if (user) {
+      fetchExpenses();
+    }
+  }, [user]);
+
+  const fetchExpenses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', user!.id)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      setExpenses(data || []);
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredExpenses = expenses.filter(expense =>
     expense.merchant.toLowerCase().includes(searchQuery.toLowerCase()) ||
     expense.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -35,6 +53,14 @@ const Expenses = () => {
     };
     return colors[category] || "bg-gray-500/10 text-gray-600";
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -79,13 +105,15 @@ const Expenses = () => {
           {filteredExpenses.length === 0 ? (
             <Card className="p-8 text-center shadow-card">
               <Receipt className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground">No expenses found</p>
+              <p className="text-muted-foreground">
+                {expenses.length === 0 ? "No expenses yet. Scan your first receipt!" : "No expenses found"}
+              </p>
             </Card>
           ) : (
             filteredExpenses.map((expense) => (
               <Card
                 key={expense.id}
-                className="p-4 shadow-card hover:shadow-md transition-all cursor-pointer hover:-translate-y-0.5"
+                className="p-4 shadow-card hover:shadow-md transition-all cursor-pointer hover:-translate-y-0.5 animate-fade-in"
                 onClick={() => navigate(`/expense/${expense.id}`)}
               >
                 <div className="flex items-center justify-between">
@@ -99,12 +127,14 @@ const Expenses = () => {
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${getCategoryColor(expense.category)}`}>
                           {expense.category}
                         </span>
-                        <span className="text-xs text-muted-foreground">{expense.date}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(expense.date), 'MMM d, yyyy')}
+                        </span>
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xl font-bold">PKR {expense.amount.toLocaleString()}</p>
+                    <p className="text-xl font-bold">PKR {Number(expense.amount).toLocaleString()}</p>
                   </div>
                 </div>
               </Card>
